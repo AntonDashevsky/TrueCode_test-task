@@ -1,2 +1,2 @@
-export { useAuthStore } from './model/auth-store';
+export { useAuthStore } from '@/shared/auth/auth-store';
 export { useAuth } from './model/use-auth';

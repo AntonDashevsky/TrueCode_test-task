@@ -146,14 +146,22 @@ export function ProfilePage() {
         images: editState.newImages,
       };
 
-      setEditState(null);
-      editPostMutation.mutate({
-        id: postId,
-        data: payload,
-      });
+      editPostMutation.mutate(
+        { id: postId, data: payload },
+        {
+          onSuccess: () => {
+            setEditState(null);
+          },
+        },
+      );
     },
     [editState, editPostMutation],
   );
+  const onSortChange = useCallback((value: 'newest' | 'oldest') => {
+    setSort(value);
+    setPage(1);
+  }, []);
+
   const onDeletePost = useCallback(
     (postId: string) => deletePostMutation.mutate(postId),
     [deletePostMutation],
@@ -248,7 +256,7 @@ export function ProfilePage() {
           page={page}
           sort={sort}
           editState={editState}
-          onSortChange={setSort}
+          onSortChange={onSortChange}
           onPageChange={setPage}
           onPageFirst={() => setPage(1)}
           onPagePrev={onPagePrev}

@@ -6,8 +6,16 @@ import { ConfigProvider } from 'antd';
 import 'antd/dist/reset.css';
 import './index.css';
 import App from './App';
+import { queryRetryDelay, shouldRetryQuery } from '@/shared/lib/query-retry';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: shouldRetryQuery,
+      retryDelay: queryRetryDelay,
+    },
+  },
+});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
