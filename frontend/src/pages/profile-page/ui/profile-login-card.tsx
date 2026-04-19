@@ -1,15 +1,15 @@
 import { Button, Card, Flex, Input, Typography } from 'antd';
 import { memo } from 'react';
 
-type Credentials = {
+export type LoginCredentials = {
   email: string;
   password: string;
 };
 
-type ProfileLoginCardProps = {
-  credentials: Credentials;
+export type ProfileLoginCardProps = {
+  credentials: LoginCredentials;
   isSubmitting: boolean;
-  onCredentialsChange: (patch: Partial<Credentials>) => void;
+  onCredentialsChange: (patch: Partial<LoginCredentials>) => void;
   onSubmit: () => void;
 };
 

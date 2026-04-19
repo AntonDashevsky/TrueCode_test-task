@@ -12,6 +12,8 @@ export function useProfile(enabled: boolean) {
     enabled,
   });
 
+
+  // TODO: Возможно, стоит объединить
   const updateProfileMutation = useMutation({
     mutationFn: (payload: Partial<Profile>) => profileApi.update(payload),
     onSuccess: () => {
