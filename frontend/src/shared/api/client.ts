@@ -18,25 +18,52 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    if (error.response?.status !== 401 || originalRequest._retry) throw error;
+    if (!originalRequest || error.response?.status !== 401) {
+      throw error;
+    }
+
+    const path = String(originalRequest.url ?? '');
+    const isAuthLogin = path.includes('auth/login');
+    const isAuthRefresh = path.includes('auth/refresh');
+    // Неверный пароль и т.п. - не трогаем refresh и не чистим сессию здесь
+    if (isAuthLogin) {
+      throw error;
+    }
+    // Refresh отклонён - сбрасываем локальную сессию
+    if (isAuthRefresh) {
+      useAuthStore.getState().clear();
+      throw error;
+    }
+
+    if (originalRequest._retry) {
+      useAuthStore.getState().clear();
+      throw error;
+    }
     originalRequest._retry = true;
 
     const refreshToken = useAuthStore.getState().refreshToken;
-    if (!refreshToken) throw error;
-
-    if (!refreshPromise) {
-      refreshPromise = api
-        .post<Tokens>('/auth/refresh', { refreshToken })
-        .then((res) => res.data)
-        .finally(() => {
-          refreshPromise = null;
-        });
+    if (!refreshToken) {
+      useAuthStore.getState().clear();
+      throw error;
     }
 
-    const tokens = await refreshPromise;
-    useAuthStore.getState().setTokens(tokens);
-    originalRequest.headers.Authorization = `Bearer ${tokens.accessToken}`;
-    return api.request(originalRequest);
+    try {
+      if (!refreshPromise) {
+        refreshPromise = api
+          .post<Tokens>('/auth/refresh', { refreshToken })
+          .then((res) => res.data)
+          .finally(() => {
+            refreshPromise = null;
+          });
+      }
+      const tokens = await refreshPromise;
+      useAuthStore.getState().setTokens(tokens);
+      originalRequest.headers.Authorization = `Bearer ${tokens.accessToken}`;
+      return api.request(originalRequest);
+    } catch {
+      useAuthStore.getState().clear();
+      throw error;
+    }
   },
 );
 
