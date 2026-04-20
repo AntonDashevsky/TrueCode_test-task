@@ -106,7 +106,7 @@ export const postsApi = {
     const formData = new FormData();
     if (payload.text !== undefined) formData.append('text', payload.text);
     if (payload.removeImageIds?.length) {
-      formData.append('removeImageIds', JSON.stringify(payload.removeImageIds));
+      payload.removeImageIds.forEach((id) => formData.append('removeImageIds[]', id));
     }
     payload.images?.forEach((file) => formData.append('images', file));
     return api.patch(`/posts/${id}`, formData).then((res) => res.data);
