@@ -11,6 +11,8 @@ import { getJwtConfig } from '../config/jwt.config';
 @Injectable()
 export class AuthService {
     private readonly jwtConfig: ReturnType<typeof getJwtConfig>;
+    private static readonly REFRESH_TOKEN_HASH_ROUNDS = 10;
+    private static readonly REFRESH_TOKEN_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
     constructor(
         private readonly usersService: UsersService,
@@ -23,50 +25,29 @@ export class AuthService {
     }
 
     async login(email: string, password: string) {
-        const user = await this.usersService.findByEmail(email);
-        if (!user) throw new UnauthorizedException('Invalid credentials');
-        const passwordOk = await bcrypt.compare(password, user.passwordHash);
-        if (!passwordOk) throw new UnauthorizedException('Invalid credentials');
-        return this.issueTokens(user.id, user.email);
+        const user = await this._validateCredentialsOrThrow(email, password);
+        return this._issueTokens(user.id, user.email);
     }
 
     async refresh(refreshToken: string) {
-        let payload: { sub: string; email: string };
-        try {
-            payload = await this.jwtService.verifyAsync(refreshToken, {
-                secret: this.jwtConfig.refreshSecret,
-            });
-        } catch {
-            throw new UnauthorizedException('Invalid refresh token');
-        }
+        const payload = await this._verifyRefreshTokenOrThrow(refreshToken);
+        const isValid = await this._hasMatchingRefreshTokenHash(payload.sub, refreshToken);
 
-        const storedTokens = await this.refreshTokenRepository.find({
-            where: { userId: payload.sub },
-        });
-        const valid = await Promise.any(
-            storedTokens.map(async (tokenEntity) => ({
-                ok: await bcrypt.compare(refreshToken, tokenEntity.tokenHash),
-            })),
-        ).catch(() => ({ ok: false }));
-
-        if (!valid.ok) throw new UnauthorizedException('Refresh token revoked');
-        return this.issueTokens(payload.sub, payload.email);
+        if (!isValid) throw new UnauthorizedException('Refresh token revoked');
+        return this._issueTokens(payload.sub, payload.email);
     }
 
     async logout(refreshToken: string) {
-        let payload: { sub: string };
-        try {
-            payload = await this.jwtService.verifyAsync(refreshToken, {
-                secret: this.jwtConfig.refreshSecret,
-            });
-        } catch {
+        const payload = await this._tryVerifyRefreshToken(refreshToken);
+        if (!payload) {
             return { success: true };
         }
-        await this.refreshTokenRepository.delete({ userId: payload.sub });
+
+        await this._deleteUserRefreshTokens(payload.sub);
         return { success: true };
     }
 
-    private async issueTokens(userId: string, email: string) {
+    private async _issueTokens(userId: string, email: string) {
         const accessToken = await this.jwtService.signAsync(
             { sub: userId, email },
             {
@@ -83,9 +64,9 @@ export class AuthService {
             },
         );
 
-        await this.refreshTokenRepository.delete({ userId });
-        const tokenHash = await bcrypt.hash(refreshToken, 10);
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        await this._deleteUserRefreshTokens(userId);
+        const tokenHash = await bcrypt.hash(refreshToken, AuthService.REFRESH_TOKEN_HASH_ROUNDS);
+        const expiresAt = this._getRefreshTokenExpiryDate();
         await this.refreshTokenRepository.save({
             userId,
             tokenHash,
@@ -93,5 +74,56 @@ export class AuthService {
         });
 
         return { accessToken, refreshToken };
+    }
+
+    private async _validateCredentialsOrThrow(email: string, password: string) {
+        const user = await this.usersService.findByEmail(email);
+        if (!user) throw new UnauthorizedException('Invalid credentials');
+
+        const passwordOk = await bcrypt.compare(password, user.passwordHash);
+        if (!passwordOk) throw new UnauthorizedException('Invalid credentials');
+
+        return user;
+    }
+
+    private async _verifyRefreshTokenOrThrow(refreshToken: string) {
+        const payload = await this._tryVerifyRefreshToken(refreshToken);
+        if (!payload) throw new UnauthorizedException('Invalid refresh token');
+        return payload;
+    }
+
+    private async _tryVerifyRefreshToken(refreshToken: string) {
+        try {
+            return await this.jwtService.verifyAsync<{ sub: string; email: string }>(refreshToken, {
+                secret: this.jwtConfig.refreshSecret,
+            });
+        } catch {
+            return null;
+        }
+    }
+
+    private async _hasMatchingRefreshTokenHash(
+        userId: string,
+        incomingRefreshToken: string,
+    ): Promise<boolean> {
+        const storedTokens = await this.refreshTokenRepository.find({
+            where: { userId },
+        });
+        if (!storedTokens.length) return false;
+
+        for (const tokenEntity of storedTokens) {
+            const matches = await bcrypt.compare(incomingRefreshToken, tokenEntity.tokenHash);
+            if (matches) return true;
+        }
+
+        return false;
+    }
+
+    private _deleteUserRefreshTokens(userId: string): Promise<unknown> {
+        return this.refreshTokenRepository.delete({ userId });
+    }
+
+    private _getRefreshTokenExpiryDate(): Date {
+        return new Date(Date.now() + AuthService.REFRESH_TOKEN_LIFETIME_MS);
     }
 }
