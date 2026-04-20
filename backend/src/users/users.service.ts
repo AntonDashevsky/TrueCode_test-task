@@ -40,28 +40,25 @@ export class UsersService implements OnModuleInit {
     }
 
     async getProfile(userId: string) {
-        const user = await this.findById(userId);
-        if (!user) throw new NotFoundException('User not found');
-        return this.toProfile(user);
+        const user = await this._findOneByIdOrThrow(userId);
+        return this._toProfile(user);
     }
 
     async updateProfile(userId: string, dto: UpdateProfileDto) {
-        const user = await this.findById(userId);
-        if (!user) throw new NotFoundException('User not found');
+        const user = await this._findOneByIdOrThrow(userId);
         Object.assign(user, dto);
-        const updated = await this.usersRepository.save(user);
-        return this.toProfile(updated);
+        const updated = await this._saveUser(user);
+        return this._toProfile(updated);
     }
 
     async updateAvatar(userId: string, avatarPath: string) {
-        const user = await this.findById(userId);
-        if (!user) throw new NotFoundException('User not found');
+        const user = await this._findOneByIdOrThrow(userId);
         user.avatarPath = avatarPath;
-        const updated = await this.usersRepository.save(user);
-        return this.toProfile(updated);
+        const updated = await this._saveUser(user);
+        return this._toProfile(updated);
     }
 
-    toProfile(user: User) {
+    private _toProfile(user: User) {
         return {
             id: user.id,
             email: user.email,
@@ -72,5 +69,15 @@ export class UsersService implements OnModuleInit {
             phone: user.phone,
             avatarPath: user.avatarPath,
         };
+    }
+
+    private async _findOneByIdOrThrow(userId: string): Promise<User> {
+        const user = await this.findById(userId);
+        if (!user) throw new NotFoundException('User not found');
+        return user;
+    }
+
+    private _saveUser(user: User): Promise<User> {
+        return this.usersRepository.save(user);
     }
 }
